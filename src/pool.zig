@@ -94,8 +94,10 @@ pub fn Pool(
         pub const ColumnSlices = StructOfSlices(Columns);
         pub const Column = meta.FieldEnum(Columns);
 
-        pub const column_fields = meta.fields(Columns);
-        pub const column_count = column_fields.len;
+        pub const column_field_names = @typeInfo(Columns).@"struct".field_names;
+        pub const column_field_types = @typeInfo(Columns).@"struct".field_types;
+        pub const column_field_attrs = @typeInfo(Columns).@"struct".field_attrs;
+        pub const column_count = column_field_names.len;
 
         pub fn ColumnType(comptime column: Column) type {
             return meta.fieldInfo(Columns, column).type;
@@ -103,45 +105,46 @@ pub fn Pool(
 
         // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-        const private_fields = meta.fields(struct {
+        const Private = struct {
             @"Pool._free_queue": AddressableIndex,
             @"Pool._curr_cycle": AddressableCycle,
-        });
+        };
+
+        pub const private_field_names = @typeInfo(Private).@"struct".field_names;
+        pub const private_field_types = @typeInfo(Private).@"struct".field_types;
+        pub const private_field_attrs = @typeInfo(Private).@"struct".field_attrs;
+        const private_field_count = private_field_names.len;
 
         const Storage = blk: {
-            const field_count = private_fields.len + column_fields.len;
+            const field_count = private_field_names.len + column_count;
             var field_names: [field_count][]const u8 = undefined;
             var field_types: [field_count]type = undefined;
-            var field_attrs: [field_count]std.builtin.Type.StructField.Attributes = undefined;
+            var field_attrs: [field_count]std.lang.Type.Struct.FieldAttributes = undefined;
 
             for (
-                private_fields,
-                field_names[0..private_fields.len],
-                field_types[0..private_fields.len],
-                field_attrs[0..private_fields.len],
-            ) |field, *name, *Type, *attrs| {
-                name.* = field.name;
-                Type.* = field.type;
-                attrs.* = .{
-                    .@"comptime" = field.is_comptime,
-                    .@"align" = field.alignment,
-                    .default_value_ptr = field.default_value_ptr,
-                };
+                private_field_names,
+                private_field_types,
+                private_field_attrs,
+                field_names[0..private_field_count],
+                field_types[0..private_field_count],
+                field_attrs[0..private_field_count],
+            ) |field_name, field_type, field_attr, *name, *Type, *attrs| {
+                name.* = field_name;
+                Type.* = field_type;
+                attrs.* = field_attr;
             }
 
             for (
-                column_fields,
-                field_names[private_fields.len..][0..column_fields.len],
-                field_types[private_fields.len..][0..column_fields.len],
-                field_attrs[private_fields.len..][0..column_fields.len],
-            ) |field, *name, *Type, *attrs| {
-                name.* = field.name;
-                Type.* = field.type;
-                attrs.* = .{
-                    .@"comptime" = field.is_comptime,
-                    .@"align" = field.alignment,
-                    .default_value_ptr = field.default_value_ptr,
-                };
+                column_field_names,
+                column_field_types,
+                column_field_attrs,
+                field_names[private_field_count..][0..column_count],
+                field_types[private_field_count..][0..column_count],
+                field_attrs[private_field_count..][0..column_count],
+            ) |field_name, field_type, field_attr, *name, *Type, *attrs| {
+                name.* = field_name;
+                Type.* = field_type;
+                attrs.* = field_attr;
             }
 
             break :blk MultiArrayList(@Struct(
@@ -491,8 +494,7 @@ pub fn Pool(
 
         /// Gets a column pointer. In most cases, `getColumnPtrAssumeLive` should be used instead.
         pub fn getColumnPtrUnchecked(self: Self, handle: AddressableHandle, comptime column: Column) *ColumnType(column) {
-            const column_field = meta.fieldInfo(Columns, column);
-            return &@field(self.columns, column_field.name)[handle.index];
+            return &@field(self.columns, @tagName(column))[handle.index];
         }
 
         /// Gets a column value. In most cases, `getColumnAssumeLive` should be used instead.
@@ -503,18 +505,17 @@ pub fn Pool(
         /// Gets column values. In most cases, `getColumnsAssumeLive` should be used instead.
         pub fn getColumnsUnchecked(self: Self, handle: AddressableHandle) Columns {
             var values: Columns = undefined;
-            inline for (column_fields) |column_field| {
-                @field(values, column_field.name) =
-                    @field(self.columns, column_field.name)[handle.index];
+            inline for (column_field_names) |column_field_name| {
+                @field(values, column_field_name) =
+                    @field(self.columns, column_field_name)[handle.index];
             }
             return values;
         }
 
         /// Sets a column value. In most cases, `setColumnAssumeLive` should be used instead.
         pub fn setColumnUnchecked(self: Self, handle: AddressableHandle, comptime column: Column, value: ColumnType(column)) void {
-            const column_field = meta.fieldInfo(Columns, column);
-            self.deinitColumnAt(handle.index, column_field);
-            @field(self.columns, column_field.name)[handle.index] = value;
+            self.deinitColumnAt(handle.index, @tagName(column), @TypeOf(@field(self.columns, @tagName(column))));
+            @field(self.columns, @tagName(column))[handle.index] = value;
         }
 
         /// Sets column values. In most cases, `setColumnsAssumeLive` should be used instead.
@@ -528,18 +529,18 @@ pub fn Pool(
         const StructField = std.builtin.Type.StructField;
 
         fn initColumnsAt(self: Self, index: AddressableIndex, values: Columns) void {
-            inline for (column_fields) |column_field| {
-                @field(self.columns, column_field.name)[index] =
-                    @field(values, column_field.name);
+            inline for (column_field_names) |column_field_name| {
+                @field(self.columns, column_field_name)[index] =
+                    @field(values, column_field_name);
             }
         }
 
         /// Call `value.deinit()` if defined.
-        fn deinitColumnAt(self: Self, index: AddressableIndex, comptime column_field: StructField) void {
-            switch (@typeInfo(column_field.type)) {
+        fn deinitColumnAt(self: Self, index: AddressableIndex, comptime column_field_name: []const u8, comptime column_field_type: type) void {
+            switch (@typeInfo(column_field_type)) {
                 .@"struct", .@"enum", .@"union", .@"opaque" => {
-                    if (@hasDecl(column_field.type, "deinit")) {
-                        @field(self.columns, column_field.name)[index].deinit();
+                    if (@hasDecl(column_field_type, "deinit")) {
+                        @field(self.columns, column_field_name)[index].deinit();
                     }
                 },
                 else => {},
@@ -550,18 +551,18 @@ pub fn Pool(
         fn deinitColumnsAt(self: Self, index: AddressableIndex) void {
             if (@hasDecl(Columns, "deinit")) {
                 var values: Columns = undefined;
-                inline for (column_fields) |column_field| {
-                    @field(values, column_field.name) =
-                        @field(self.columns, column_field.name)[index];
+                inline for (column_field_names) |column_field_name| {
+                    @field(values, column_field_name) =
+                        @field(self.columns, column_field_name)[index];
                 }
                 values.deinit();
-                inline for (column_fields) |column_field| {
-                    @field(self.columns, column_field.name)[index] =
-                        @field(values, column_field.name);
+                inline for (column_field_names) |column_field_name| {
+                    @field(self.columns, column_field_name)[index] =
+                        @field(values, column_field_name);
                 }
             } else {
-                inline for (column_fields) |column_field| {
-                    self.deinitColumnAt(index, column_field);
+                inline for (column_field_names, column_field_types) |column_field_name, column_field_type| {
+                    self.deinitColumnAt(index, column_field_name, column_field_type);
                 }
             }
         }
@@ -575,11 +576,11 @@ pub fn Pool(
             self._free_queue.resize(free_queue_storage);
 
             self._curr_cycle = slice.items(.@"Pool._curr_cycle");
-            inline for (column_fields, 0..) |column_field, i| {
-                const F = column_field.type;
-                const p = slice.ptrs[private_fields.len + i];
+            inline for (column_field_names, column_field_types, 0..) |column_field_name, column_field_type, i| {
+                const F = column_field_type;
+                const p = slice.ptrs[private_field_count + i];
                 const f = @as([*]F, @ptrCast(@alignCast(p)));
-                @field(self.columns, column_field.name) = f[0..slice.len];
+                @field(self.columns, column_field_name) = f[0..slice.len];
             }
         }
 

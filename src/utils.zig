@@ -49,28 +49,30 @@ pub fn AddressableUInt(comptime min_bits: u8) type {
 /// Returns: `StructOfSlices = struct { foo: []u32, bar: []u64 }`
 pub fn StructOfSlices(comptime Struct: type) type {
     // same number of fields in the new struct
-    const struct_fields = @typeInfo(Struct).@"struct".fields;
-    var field_names: [struct_fields.len][]const u8 = undefined;
-    var field_types: [struct_fields.len]type = undefined;
+    const struct_field_names = @typeInfo(Struct).@"struct".field_names;
+    const struct_field_types = @typeInfo(Struct).@"struct".field_types;
+    var field_names: [struct_field_names.len][]const u8 = undefined;
+    var field_types: [struct_field_types.len]type = undefined;
 
     inline for (
-        struct_fields,
-        field_names[0..struct_fields.len],
-        field_types[0..struct_fields.len],
-    ) |field, *name, *Type| {
+        struct_field_names,
+        struct_field_types,
+        field_names[0..struct_field_names.len],
+        field_types[0..struct_field_types.len],
+    ) |field_name, field_type, *name, *Type| {
         // u32 -> []u32
-        const element_type = field.type;
+        const element_type = field_type;
 
         const FieldType = @Pointer(
             .slice,
             .{
-                .@"align" = field.alignment,
+                .@"align" = std.meta.alignment(field_type),
             },
             element_type,
             null,
         );
 
-        name.* = field.name;
+        name.* = field_name;
         Type.* = FieldType;
     }
 
