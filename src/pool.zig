@@ -116,7 +116,7 @@ pub fn Pool(
         const private_field_count = private_field_names.len;
 
         const Storage = blk: {
-            const field_count = private_field_names.len + column_count;
+            const field_count = private_field_count + column_count;
             var field_names: [field_count][]const u8 = undefined;
             var field_types: [field_count]type = undefined;
             var field_attrs: [field_count]std.lang.Type.Struct.FieldAttributes = undefined;
@@ -735,11 +735,11 @@ const DeinitCounter = struct {
 
     counter: *u32,
 
-    fn init(_counter: *u32) Self {
+    pub fn init(_counter: *u32) Self {
         return Self{ .counter = _counter };
     }
 
-    fn deinit(self: *Self) void {
+    pub fn deinit(self: *Self) void {
         self.counter.* += 1;
     }
 };
