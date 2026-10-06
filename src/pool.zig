@@ -514,7 +514,7 @@ pub fn Pool(
 
         /// Sets a column value. In most cases, `setColumnAssumeLive` should be used instead.
         pub fn setColumnUnchecked(self: Self, handle: AddressableHandle, comptime column: Column, value: ColumnType(column)) void {
-            self.deinitColumnAt(handle.index, @tagName(column), @TypeOf(@field(self.columns, @tagName(column))));
+            self.deinitColumnAt(handle.index, @tagName(column), @typeInfo(@TypeOf(@field(self.columns, @tagName(column)))).pointer.child);
             @field(self.columns, @tagName(column))[handle.index] = value;
         }
 
